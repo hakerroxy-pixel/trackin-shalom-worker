@@ -1,0 +1,315 @@
+// src/shalom-service.js
+// Servicio de alto nivel: orquesta el flujo completo de subir un pedido a Shalom Pro.
+// Recibe un pedido de TrackIn-IA y devuelve { ose_id, codigo, ... } o un error tipado.
+
+import { ShalomClient, ShalomError } from './shalom-client.js';
+import { buildServiceOrderPayload, DEFAULT_PRODUCT } from './shipment-builder.js';
+
+// Cache global de instancias de ShalomClient por email (para reusar sesiones en memoria del worker)
+const clientCache = new Map();
+
+function getClient({ email, password, debug = false }) {
+  const key = email.toLowerCase();
+  if (clientCache.has(key)) {
+    const c = clientCache.get(key);
+    // Si la password cambio, invalidar
+    if (c.password !== password) {
+      clientCache.delete(key);
+    } else {
+      return c;
+    }
+  }
+  const c = new ShalomClient({ email, password, debug });
+  clientCache.set(key, c);
+  return c;
+}
+
+// Cache de terminales (10 min) para evitar pedirlas siempre
+const terminalsCache = { data: null, ts: 0, ttl: 10 * 60 * 1000 };
+
+async function getTerminalsCached(client) {
+  if (terminalsCache.data && (Date.now() - terminalsCache.ts) < terminalsCache.ttl) {
+    return terminalsCache.data;
+  }
+  const data = await client.listTerminals();
+  terminalsCache.data = data;
+  terminalsCache.ts = Date.now();
+  return data;
+}
+
+// Resolver una terminal de destino segun los datos del pedido
+// Estrategia: matching por nombre/zona/provincia/distrito (fuzzy)
+function resolveDestinoTerminal(terminals, pedido) {
+  const norm = (s) => String(s || '').toUpperCase().trim().replace(/\s+/g, ' ');
+  const provincia = norm(pedido.provincia);
+  const ciudad = norm(pedido.ciudad);
+
+  // 1) Match exacto por zona === ciudad o zona === provincia
+  for (const t of terminals) {
+    if (t.destino !== 1) continue; // solo destinos validos
+    const zona = norm(t.zona);
+    if (zona && (zona === ciudad || zona === provincia)) return t;
+  }
+  // 2) Match exacto por provincia
+  for (const t of terminals) {
+    if (t.destino !== 1) continue;
+    if (norm(t.provincia) === provincia && norm(t.zona) === ciudad) return t;
+  }
+  // 3) Match por contains
+  for (const t of terminals) {
+    if (t.destino !== 1) continue;
+    const zona = norm(t.zona);
+    if (zona && (zona.includes(ciudad) || ciudad.includes(zona))) return t;
+  }
+  // 4) Match por provincia solo
+  for (const t of terminals) {
+    if (t.destino !== 1) continue;
+    if (norm(t.provincia) === provincia) return t;
+  }
+  return null;
+}
+
+// Calcular tarifa Los Fresnos -> destino (CON REFUERZOS)
+// IMPORTANTE: dimensiones en METROS, peso en KG
+// CORREGIDO: ahora devuelve { tarifa, aereo, strict } — el flag 'aereo' viene de la respuesta
+// REAL de tarifa de la RUTA específica.
+// REFUERZO: reintenta hasta 3 veces. Si los 3 intentos fallan, devuelve strict=false para que
+// el caller DECIDA si quiere abortar o seguir. Nunca asume aereo=true silenciosamente.
+async function calcularTarifa(client, origenId, destinoId, product) {
+  const payload = {
+    origen: origenId,
+    destino: destinoId,
+    peso: product.weight || 0.5,
+    largo: product.length || 0.20,
+    ancho: product.width || 0.15,
+    alto: product.height || 0.12,
+    cantidad: 1
+  };
+
+  const MAX_RETRIES = 3;
+  let lastError = null;
+
+  for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+    try {
+      const r = await client.apiCall('POST', '/mostrar-tarifa-origen-destino', payload);
+      if (r.valor && r.data) {
+        const tarifa = parseFloat(r.data.tar_paquetexxs || r.data.tar_paqueteria || r.data.tar_minimopeso || 10);
+        // ⭐ Respuesta oficial del servidor — confiable
+        return {
+          tarifa,
+          aereo: !!r.aereo,
+          tiempo_llegada: r.data.lead_time || r.data.tar_tiempo_llegada || null,
+          strict: true,     // ← confirmado por el servidor
+          attempt,
+          rawAereo: r.aereo
+        };
+      }
+      lastError = new Error('Shalom devolvio valor:false o sin data');
+    } catch (e) {
+      lastError = e;
+      console.warn(`[shalom-service] calcularTarifa intento ${attempt}/${MAX_RETRIES} fallo:`, e.message);
+      // Esperar 500ms * attempt antes del siguiente intento (backoff exponencial light)
+      if (attempt < MAX_RETRIES) {
+        await new Promise(resolve => setTimeout(resolve, 500 * attempt));
+      }
+    }
+  }
+
+  // Los 3 intentos fallaron — devolver default INSEGURO con flag strict=false
+  // para que el caller aborte si necesita certeza
+  console.error('[shalom-service] calcularTarifa fallo despues de', MAX_RETRIES, 'intentos:', lastError?.message);
+  return {
+    tarifa: 10,
+    aereo: false,       // ← default TERRESTRE (la opción segura si no sabemos)
+    tiempo_llegada: null,
+    strict: false,      // ← marca que este resultado NO es confiable
+    error: lastError?.message || 'unknown'
+  };
+}
+
+// FUNCION PRINCIPAL: subir un pedido a Shalom Pro
+export async function subirPedidoAShalom({ pedido, credenciales, remitenteData, terminalOrigenId = 426, debug = false }) {
+  const client = getClient({ ...credenciales, debug });
+  await client.ensureSession();
+
+  // ⭐ ORIGEN: si el pedido trae un id explicito, lo usamos. Si no, fallback al param/env default
+  const origenIdFinal = pedido.shalomTerminalOrigenId || terminalOrigenId;
+
+  // 1. Resolver destino — PRIORIDAD: ter_id explicito del frontend (cuando el user eligio en el selector)
+  // Si no viene, fallback al fuzzy matching (para pedidos viejos sin shalomTerminalDestinoId)
+  let destinoTerminal;
+  const terminals = await getTerminalsCached(client);
+  if (pedido.shalomTerminalDestinoId) {
+    const idNum = Number(pedido.shalomTerminalDestinoId);
+    if (isNaN(idNum)) {
+      throw new ShalomError(`Terminal destino ID invalido: "${pedido.shalomTerminalDestinoId}"`, 'TERMINAL_ID_NAN');
+    }
+    destinoTerminal = terminals.find(t => Number(t.ter_id) === idNum);
+    if (!destinoTerminal) {
+      throw new ShalomError(
+        `Terminal destino con id ${idNum} no encontrado en lista de Shalom (${terminals.length} terminales disponibles)`,
+        'TERMINAL_ID_INVALIDO'
+      );
+    }
+    if (debug) console.log('[Shalom] Destino EXPLICITO ter_id=' + idNum + ':', destinoTerminal.nombre || destinoTerminal.zona);
+  } else {
+    destinoTerminal = resolveDestinoTerminal(terminals, pedido);
+    if (!destinoTerminal) {
+      throw new ShalomError(
+        `No se encontro terminal Shalom para destino: ${pedido.provincia} / ${pedido.ciudad}`,
+        'DESTINO_NO_ENCONTRADO'
+      );
+    }
+    if (debug) console.log('[Shalom] Destino FUZZY:', destinoTerminal.nombre, '(ter_id:', destinoTerminal.ter_id + ')');
+  }
+
+  // 2. Garantizar que el REMITENTE existe en la cuenta y obtener su id interno (CRITICO)
+  const remitenteDoc = remitenteData?.document || credenciales.remitenteDoc || '74303615';
+  const remitentePerson = await client.ensurePersonId(remitenteDoc, 'sender');
+  if (debug) console.log('[Shalom] Remitente id:', remitentePerson.id, '(' + remitentePerson.full_name + ')');
+
+  // 3. Garantizar que el DESTINATARIO existe en la cuenta y obtener su id interno (CRITICO)
+  const destinatarioPerson = await client.ensurePersonId(pedido.dni, 'receiver');
+  if (debug) console.log('[Shalom] Destinatario id:', destinatarioPerson.id, '(' + destinatarioPerson.full_name + ')');
+
+  // 4. Producto: usar default Caja Paquete XS
+  const productInfo = DEFAULT_PRODUCT;
+
+  // 5. Calcular tarifa — AHORA devuelve { tarifa, aereo, tiempo_llegada, strict }
+  const tarifaResult = await calcularTarifa(client, origenIdFinal, destinoTerminal.ter_id, productInfo);
+  const tarifa = tarifaResult.tarifa;
+  const esAereo = tarifaResult.aereo; // ⭐ flag REAL de la ruta (no de la terminal)
+
+  // 🛡️ REFUERZO 1: si la consulta de tarifa NO fue confiable (fallaron los 3 intentos),
+  // Continuar con terrestre por defecto y avisar (antes abortaba)
+  if (!tarifaResult.strict) {
+    console.warn('[shalom-service] ⚠️ Tarifa no confiable, usando TERRESTRE por defecto. Error:', tarifaResult.error);
+  }
+
+  // 🛡️ REFUERZO 2: cross-check contra ter_aereo de la terminal
+  // Si la terminal dice aereo=0 PERO la tarifa dice aereo=true, hay inconsistencia grave
+  // (esto nunca deberia pasar, pero si pasa, aborta).
+  if (esAereo && destinoTerminal.ter_aereo === 0) {
+    throw new ShalomError(
+      'Inconsistencia: la ruta indica AEREO pero la terminal destino no soporta aereo. ' +
+      'Terminal: ' + destinoTerminal.nombre + ' (ter_id=' + destinoTerminal.ter_id + ')',
+      'INCONSISTENCY_AEREO_TERMINAL'
+    );
+  }
+
+  if (debug) console.log('[Shalom] ✅ Tarifa verificada: S/', tarifa, '| Modalidad:', esAereo ? 'AEREO' : 'TERRESTRE', '| strict:', tarifaResult.strict, '| tiempo:', tarifaResult.tiempo_llegada);
+
+  // 6. Construir payload (con remitente_id y destinatario_id REALES)
+  const payload = buildServiceOrderPayload(pedido, {
+    terminalOrigenId: origenIdFinal,
+    terminalDestinoId: destinoTerminal.ter_id,
+    remitenteDocumento: remitenteDoc,
+    remitenteId: remitentePerson.id,
+    destinatarioId: destinatarioPerson.id,
+    tarifa,
+    productInfo,
+    aereo: esAereo,                                // ⭐ FIX: usa el flag real de la ruta
+    tipoPago: 'DESTINATARIO',
+    declaracionJurada: esAereo ? 'Documentos' : '' // solo si realmente es aéreo
+  });
+
+  if (debug) {
+    console.log('[Shalom] Payload final:');
+    console.log(JSON.stringify(payload, null, 2));
+  }
+
+  // 6. POST /service_order/save
+  const res = await client.saveServiceOrder(payload);
+
+  if (!res || res.success === false) {
+    throw new ShalomError(
+      'Shalom rechazo el envio: ' + (res?.message || 'error desconocido'),
+      'SAVE_FAIL',
+      res
+    );
+  }
+
+  // 🛡️ REFUERZO 4: post-creación verificar con el API público de tracking
+  // (este endpoint no requiere auth, entonces podemos usar fetch normal)
+  let modalidadServer = null;
+  let verificacionServer = false;
+  const guiaNum = res.data?.guia ? String(res.data.guia) : null;
+  const codigoGuia = res.data?.codigo || '';
+  if (guiaNum) {
+    try {
+      const trackRes = await fetch(`https://serviceswebapi.shalomcontrol.com/api/v1/web/rastrea/buscar`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: `numero=${encodeURIComponent(guiaNum)}&codigo=${encodeURIComponent(codigoGuia)}&ose_id=`
+      });
+      if (trackRes.ok) {
+        const trackData = await trackRes.json();
+        if (trackData?.success && trackData.data) {
+          modalidadServer = trackData.data.aereo === true ? 'aereo' : 'terrestre';
+          verificacionServer = modalidadServer === (esAereo ? 'aereo' : 'terrestre');
+          if (debug) console.log('[Shalom] ✅ Post-check server:', modalidadServer, '(match:', verificacionServer, ')');
+        }
+      }
+    } catch (e) {
+      console.warn('[shalom-service] post-check tracking fallo:', e.message);
+    }
+  }
+
+  // 🛡️ REFUERZO 3: audit log SIEMPRE — deja traza de qué modalidad se envió
+  console.log(JSON.stringify({
+    audit: 'shalom_guia_creada',
+    pedidoId: pedido.id,
+    dni: pedido.dni,
+    destino: destinoTerminal.nombre,
+    destinoId: destinoTerminal.ter_id,
+    origenId: origenIdFinal,
+    modalidad_enviada: esAereo ? 'aereo' : 'terrestre',
+    modalidad_server: modalidadServer,
+    verificacion_server_ok: verificacionServer,
+    modalidad_strict: tarifaResult.strict,
+    tarifa,
+    tiempo_llegada: tarifaResult.tiempo_llegada,
+    guia: res.data?.guia || null,
+    codigo: res.data?.codigo || null,
+    ose_id: res.data?.ose_id || null,
+    ter_aereo_terminal: destinoTerminal.ter_aereo,
+    timestamp: new Date().toISOString()
+  }));
+
+  return {
+    ok: true,
+    raw: res,
+    ose_id: res.data?.ose_id || res.ose_id || null,
+    codigo: res.data?.codigo || res.codigo || null,
+    guia: res.data?.guia || null,
+    serie: res.data?.serie || null,
+    clave: payload.clave || null,                    // ⭐ clave de seguridad para que el cliente recoja el paquete
+    numeroShalom: res.data?.guia ? String(res.data.guia) : null,
+    modalidad: esAereo ? 'aereo' : 'terrestre',      // ⭐ modalidad REAL de la ruta
+    modalidad_verificada: tarifaResult.strict && verificacionServer, // ⭐ confirmado pre+post
+    modalidad_server: modalidadServer,                // ⭐ lo que devolvió el tracking público
+    tiempoLlegada: tarifaResult.tiempo_llegada,       // ⭐ tiempo referencial
+    tarifa_calculada: tarifa,
+    payload_enviado: payload,
+    destino_terminal: destinoTerminal.nombre
+  };
+}
+
+// Limpiar cache periodicamente para evitar memory leaks (cada 30 min)
+setInterval(() => {
+  if (clientCache.size > 10) {
+    clientCache.clear();
+    console.log('[Shalom] clientCache limpiado (tenia ' + clientCache.size + ' entries)');
+  }
+  if (terminalsCache.ts && (Date.now() - terminalsCache.ts) > 30 * 60 * 1000) {
+    terminalsCache.data = null;
+    terminalsCache.ts = 0;
+  }
+}, 30 * 60 * 1000);
+
+// Helper para clear cache (util en tests)
+export function clearShalomCache() {
+  clientCache.clear();
+  terminalsCache.data = null;
+  terminalsCache.ts = 0;
+}

@@ -1,0 +1,20 @@
+{
+  "name": "trackin-shalom-worker",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Worker que registra envios en pro.shalom.pe automaticamente para TrackIn-IA",
+  "main": "src/server.js",
+  "scripts": {
+    "start": "node src/server.js",
+    "dev": "node --watch src/server.js",
+    "recon:terminal": "node _recon/find-terminal.js",
+    "test:local": "node _recon/test-local.js"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "express": "^4.21.2"
+  }
+}
