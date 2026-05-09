@@ -10,11 +10,10 @@ async function capturarBoleta(oseId, credenciales) {
   let browser = null;
   try {
     const puppeteer = await import('puppeteer-core');
-    const chromium = await import('@sparticuz/chromium');
     browser = await puppeteer.default.launch({
-      executablePath: await chromium.default.executablePath(),
-      headless: chromium.default.headless,
-      args: chromium.default.args
+      executablePath: process.env.PUPPETEER_EXECUTABLE_PATH || '/usr/bin/chromium',
+      headless: 'new',
+      args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage', '--disable-gpu']
     });
     const page = await browser.newPage();
     await page.setViewport({ width: 800, height: 1100 });
