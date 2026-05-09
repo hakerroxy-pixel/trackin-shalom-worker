@@ -15,7 +15,6 @@
     "node": ">=20"
   },
   "dependencies": {
-    "express": "^4.21.2",
-    "puppeteer-core": "^24.43.0"
+    "express": "^4.21.2"
   }
 }

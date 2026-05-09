@@ -5,50 +5,61 @@
 import { ShalomClient, ShalomError } from './shalom-client.js';
 import { buildServiceOrderPayload, DEFAULT_PRODUCT } from './shipment-builder.js';
 
-// 📸 Captura de boleta Shalom como screenshot y sube a Cloudinary
-async function capturarBoleta(oseId, credenciales) {
-  let browser = null;
+// 📸 Generar imagen de boleta con los datos de la guía y subir a Cloudinary
+async function capturarBoleta(oseId, credenciales, guiaData) {
   try {
-    const puppeteer = await import('puppeteer-core');
-    browser = await puppeteer.default.launch({
-      executablePath: process.env.PUPPETEER_EXECUTABLE_PATH || '/usr/bin/chromium',
-      headless: 'new',
-      args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage', '--disable-gpu']
-    });
-    const page = await browser.newPage();
-    await page.setViewport({ width: 800, height: 1100 });
+    // Generar SVG con los datos de la guía
+    const nombre = guiaData?.nombre || '';
+    const dni = guiaData?.dni || '';
+    const destino = guiaData?.destino || '';
+    const guia = guiaData?.guia || '';
+    const codigo = guiaData?.codigo || '';
+    const clave = guiaData?.clave || '';
+    const modalidad = guiaData?.modalidad || 'TERRESTRE';
+    
+    const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="420" height="500" viewBox="0 0 420 500">
+      <rect width="420" height="500" fill="white" rx="12"/>
+      <rect width="420" height="60" fill="#DC2626" rx="12 12 0 0"/>
+      <text x="20" y="38" font-family="Arial" font-size="22" font-weight="bold" fill="white">SHALOM</text>
+      <text x="300" y="38" font-family="Arial" font-size="12" font-weight="bold" fill="rgba(255,255,255,0.8)">${modalidad.toUpperCase()}</text>
+      <text x="20" y="100" font-family="Arial" font-size="11" fill="#94a3b8" font-weight="bold">N° DE ORDEN</text>
+      <text x="20" y="130" font-family="Courier" font-size="28" font-weight="bold" fill="#DC2626">${guia}</text>
+      <text x="300" y="100" font-family="Arial" font-size="11" fill="#94a3b8" font-weight="bold">CÓDIGO</text>
+      <text x="300" y="130" font-family="Courier" font-size="22" font-weight="bold" fill="#1e293b">${codigo}</text>
+      <line x1="20" y1="150" x2="400" y2="150" stroke="#e2e8f0" stroke-width="2" stroke-dasharray="5,5"/>
+      <text x="20" y="180" font-family="Arial" font-size="11" fill="#94a3b8" font-weight="bold">DESTINATARIO</text>
+      <text x="20" y="200" font-family="Arial" font-size="14" font-weight="bold" fill="#1e293b">${nombre}</text>
+      <text x="20" y="230" font-family="Arial" font-size="11" fill="#94a3b8" font-weight="bold">DNI</text>
+      <text x="20" y="250" font-family="Courier" font-size="14" font-weight="bold" fill="#1e293b">${dni}</text>
+      <text x="200" y="230" font-family="Arial" font-size="11" fill="#94a3b8" font-weight="bold">OSE ID</text>
+      <text x="200" y="250" font-family="Courier" font-size="14" fill="#1e293b">${oseId}</text>
+      <text x="20" y="290" font-family="Arial" font-size="11" fill="#94a3b8" font-weight="bold">DESTINO</text>
+      <text x="20" y="310" font-family="Arial" font-size="14" font-weight="bold" fill="#1e293b">${destino}</text>
+      <text x="20" y="345" font-family="Arial" font-size="11" fill="#94a3b8" font-weight="bold">ENTREGA</text>
+      <rect x="20" y="355" width="90" height="24" rx="12" fill="#dbeafe"/>
+      <text x="35" y="372" font-family="Arial" font-size="11" font-weight="bold" fill="#2563eb">En agencia</text>
+      <rect x="20" y="400" width="380" height="70" rx="10" fill="#fef2f2" stroke="#DC2626" stroke-width="2"/>
+      <text x="210" y="425" font-family="Arial" font-size="11" font-weight="bold" fill="#DC2626" text-anchor="middle">🔑 CLAVE DE RETIRO</text>
+      <text x="210" y="455" font-family="Courier" font-size="32" font-weight="bold" fill="#DC2626" text-anchor="middle" letter-spacing="4">${clave}</text>
+      <text x="210" y="490" font-family="Arial" font-size="9" fill="#94a3b8" text-anchor="middle">Generado por TrackIn-IA • pro.shalom.pe</text>
+    </svg>`;
 
-    // Login en Shalom Pro
-    await page.goto('https://pro.shalom.pe/login', { waitUntil: 'networkidle2', timeout: 30000 });
-    await page.type('input[type="email"], input[name="email"]', credenciales.email);
-    await page.type('input[type="password"], input[name="password"]', credenciales.password);
-    await page.click('button[type="submit"]');
-    await page.waitForNavigation({ waitUntil: 'networkidle2', timeout: 15000 }).catch(() => {});
-    await new Promise(r => setTimeout(r, 2000));
-
-    // Navegar a la boleta
-    await page.goto(`https://pro.shalom.pe/hdu/pdf/${oseId}`, { waitUntil: 'networkidle2', timeout: 20000 });
-    await new Promise(r => setTimeout(r, 3000)); // Esperar render SPA
-
-    // Screenshot
-    const screenshotBuffer = await page.screenshot({ type: 'png', fullPage: true });
-    console.log('[Shalom] Screenshot boleta:', screenshotBuffer.length, 'bytes');
-
-    // Subir a Cloudinary
-    const base64 = screenshotBuffer.toString('base64');
+    // Convertir SVG a base64 y subir a Cloudinary
+    const svgBase64 = Buffer.from(svg).toString('base64');
     const cloudName = process.env.CLOUDINARY_CLOUD || 'dnfgsdxan';
     const uploadPreset = process.env.CLOUDINARY_PRESET || 'EMPRESA';
     const formData = new URLSearchParams();
-    formData.append('file', `data:image/png;base64,${base64}`);
+    formData.append('file', 'data:image/svg+xml;base64,' + svgBase64);
     formData.append('upload_preset', uploadPreset);
     formData.append('folder', 'boletas');
-    const cloudRes = await fetch(`https://api.cloudinary.com/v1_1/${cloudName}/image/upload`, {
+    formData.append('format', 'png');
+    const cloudRes = await fetch('https://api.cloudinary.com/v1_1/' + cloudName + '/image/upload', {
       method: 'POST',
       body: formData
     });
     if (cloudRes.ok) {
       const cloudData = await cloudRes.json();
-      console.log('[Shalom] ✅ Boleta screenshot subida:', cloudData.secure_url);
+      console.log('[Shalom] ✅ Boleta generada y subida:', cloudData.secure_url);
       return cloudData.secure_url;
     }
     console.warn('[Shalom] Cloudinary upload failed:', cloudRes.status);
@@ -56,8 +67,6 @@ async function capturarBoleta(oseId, credenciales) {
   } catch (e) {
     console.warn('[Shalom] capturarBoleta error:', e.message);
     return null;
-  } finally {
-    if (browser) await browser.close().catch(() => {});
   }
 }
 
@@ -337,7 +346,15 @@ export async function subirPedidoAShalom({ pedido, credenciales, remitenteData, 
   let boletaUrl = null;
   if (oseId) {
     try {
-      boletaUrl = await capturarBoleta(oseId, credenciales);
+      boletaUrl = await capturarBoleta(oseId, credenciales, {
+        nombre: pedido.nombre || '',
+        dni: pedido.dni || '',
+        destino: destinoTerminal?.nombre || pedido.provincia || '',
+        guia: res.data?.guia ? String(res.data.guia) : '',
+        codigo: res.data?.codigo || '',
+        clave: payload.clave || '',
+        modalidad: esAereo ? 'AEREO' : 'TERRESTRE'
+      });
     } catch (e) {
       console.warn('[Shalom] Boleta capture failed:', e.message);
     }
