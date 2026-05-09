@@ -358,7 +358,7 @@ export async function subirPedidoAShalom({ pedido, credenciales, remitenteData, 
         modalidad: esAereo ? 'AEREO' : 'TERRESTRE'
       });
     } catch (e) {
-      console.warn('[Shalom] Boleta capture failed:', e.message);
+      console.error('[Shalom] Boleta capture FAILED:', e.message, e.stack);
     }
   }
 
@@ -399,4 +399,17 @@ export function clearShalomCache() {
   clientCache.clear();
   terminalsCache.data = null;
   terminalsCache.ts = 0;
+}
+
+// Export for testing
+export async function capturarBoletaTest(oseId) {
+  return capturarBoleta(oseId, {}, {
+    nombre: 'TEST BOLETA',
+    dni: '74303615',
+    destino: 'TRUJILLO',
+    guia: oseId,
+    codigo: 'TEST',
+    clave: '1234',
+    modalidad: 'TERRESTRE'
+  });
 }

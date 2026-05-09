@@ -75,7 +75,13 @@ function requireWorkerAuth(req, res, next) {
 // Test boleta PDF download (temporal para debug)
 app.get('/test-boleta/:oseId', requireWorkerAuth, async (req, res) => {
   try {
-    // Test SVG → Cloudinary flow directly
+    // Test capturarBoleta from shalom-service
+    const { capturarBoletaTest } = await import('./shalom-service.js');
+    if (typeof capturarBoletaTest === 'function') {
+      const url = await capturarBoletaTest(req.params.oseId);
+      return res.json({ boletaUrl: url });
+    }
+    // Fallback: Test SVG → Cloudinary flow directly
     const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="420" height="300"><rect width="420" height="300" fill="white" rx="12"/><rect width="420" height="50" fill="#DC2626" rx="12 12 0 0"/><text x="20" y="35" font-family="Arial" font-size="20" font-weight="bold" fill="white">SHALOM TEST</text><text x="20" y="90" font-family="Courier" font-size="24" fill="#DC2626">N: ${req.params.oseId}</text><text x="20" y="130" font-family="Arial" font-size="14" fill="#333">TEST BOLETA</text><text x="210" y="250" font-family="Courier" font-size="28" font-weight="bold" fill="#DC2626" text-anchor="middle">1234</text></svg>`;
     const svgBase64 = Buffer.from(svg).toString('base64');
     const cloudName = process.env.CLOUDINARY_CLOUD || 'dnfgsdxan';
