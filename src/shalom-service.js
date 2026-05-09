@@ -342,9 +342,10 @@ export async function subirPedidoAShalom({ pedido, credenciales, remitenteData, 
     timestamp: new Date().toISOString()
   }));
 
-  // 📸 Captura de boleta: screenshot con Puppeteer + subir a Cloudinary
+  // 📸 Generar boleta SVG y subir a Cloudinary
   const oseId = res.data?.ose_id || res.ose_id || null;
   let boletaUrl = null;
+  console.log('[Shalom] Boleta: oseId =', oseId, '| res.data.ose_id =', res.data?.ose_id, '| res.ose_id =', res.ose_id);
   if (oseId) {
     try {
       boletaUrl = await capturarBoleta(oseId, credenciales, {
