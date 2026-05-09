@@ -52,7 +52,6 @@ async function capturarBoleta(oseId, credenciales, guiaData) {
     formData.append('file', 'data:image/svg+xml;base64,' + svgBase64);
     formData.append('upload_preset', uploadPreset);
     formData.append('folder', 'boletas');
-    formData.append('format', 'png');
     const cloudRes = await fetch('https://api.cloudinary.com/v1_1/' + cloudName + '/image/upload', {
       method: 'POST',
       body: formData
