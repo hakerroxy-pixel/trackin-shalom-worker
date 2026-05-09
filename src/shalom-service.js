@@ -342,25 +342,44 @@ export async function subirPedidoAShalom({ pedido, credenciales, remitenteData, 
     timestamp: new Date().toISOString()
   }));
 
-  // 📸 Generar boleta SVG inline y subir a Cloudinary
+  // 📸 Descargar boleta REAL de Shalom (PDF rótulo) y subir a Cloudinary como imagen
   const oseId = res.data?.ose_id || res.ose_id || null;
   let boletaUrl = null;
   if (oseId) {
     try {
-      const _e = (s) => String(s||'').replace(/&/g,'').replace(/</g,'').replace(/>/g,'').replace(/"/g,'');
-      const _g = _e(res.data?.guia); const _c = _e(res.data?.codigo); const _k = _e(payload.clave);
-      const _n = _e(pedido.nombre); const _d = _e(pedido.dni); const _t = _e(destinoTerminal?.nombre || pedido.provincia);
-      const _m = esAereo ? 'AEREO' : 'TERRESTRE';
-      const _s = '<svg xmlns="http://www.w3.org/2000/svg" width="420" height="480"><rect width="420" height="480" fill="white" rx="10"/><rect width="420" height="55" fill="#DC2626" rx="10 10 0 0"/><text x="20" y="36" font-family="Arial" font-size="20" font-weight="bold" fill="white">SHALOM</text><text x="320" y="36" font-family="Arial" font-size="12" font-weight="bold" fill="white">' + _m + '</text><text x="20" y="90" font-family="Arial" font-size="10" fill="#999">N DE ORDEN</text><text x="20" y="115" font-family="monospace" font-size="26" font-weight="bold" fill="#DC2626">' + _g + '</text><text x="280" y="90" font-family="Arial" font-size="10" fill="#999">CODIGO</text><text x="280" y="115" font-family="monospace" font-size="20" font-weight="bold" fill="#333">' + _c + '</text><line x1="20" y1="135" x2="400" y2="135" stroke="#eee" stroke-width="1"/><text x="20" y="160" font-family="Arial" font-size="10" fill="#999">DESTINATARIO</text><text x="20" y="180" font-family="Arial" font-size="14" font-weight="bold" fill="#333">' + _n + '</text><text x="20" y="210" font-family="Arial" font-size="10" fill="#999">DNI</text><text x="20" y="230" font-family="monospace" font-size="13" fill="#333">' + _d + '</text><text x="20" y="260" font-family="Arial" font-size="10" fill="#999">DESTINO</text><text x="20" y="280" font-family="Arial" font-size="13" font-weight="bold" fill="#333">' + _t + '</text><text x="20" y="310" font-family="Arial" font-size="10" fill="#999">ENTREGA</text><rect x="20" y="318" width="80" height="22" rx="11" fill="#DBEAFE"/><text x="30" y="333" font-family="Arial" font-size="10" font-weight="bold" fill="#2563EB">En agencia</text><rect x="20" y="370" width="380" height="65" rx="8" fill="#FEF2F2" stroke="#DC2626" stroke-width="2"/><text x="210" y="395" font-family="Arial" font-size="10" font-weight="bold" fill="#DC2626" text-anchor="middle">CLAVE DE RETIRO</text><text x="210" y="425" font-family="monospace" font-size="30" font-weight="bold" fill="#DC2626" text-anchor="middle">' + _k + '</text><text x="210" y="465" font-family="Arial" font-size="8" fill="#999" text-anchor="middle">TrackIn-IA - pro.shalom.pe</text></svg>';
-      const _fd = new URLSearchParams();
-      _fd.append('file', 'data:image/svg+xml;base64,' + Buffer.from(_s).toString('base64'));
-      _fd.append('upload_preset', 'EMPRESA');
-      _fd.append('folder', 'boletas');
-      _fd.append('public_id', 'boleta_' + oseId);
-      _fd.append('filename_override', 'boleta_' + oseId + '.svg');
-      const _r = await fetch('https://api.cloudinary.com/v1_1/dnfgsdxan/image/upload', { method: 'POST', body: _fd });
-      if (_r.ok) { boletaUrl = (await _r.json()).secure_url; }
-      else { console.error('[Boleta] Cloudinary error:', (await _r.text()).substring(0, 200)); }
+      // Descargar el PDF real del rótulo de Shalom usando la sesión autenticada
+      const pdfRes = await fetch('https://pro.shalom.pe/rotulo/pdf/' + oseId, {
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)',
+          'Cookie': client.cookieString(),
+          'X-XSRF-TOKEN': decodeURIComponent(client.jar?.['XSRF-TOKEN'] || ''),
+          'Referer': 'https://pro.shalom.pe/',
+        },
+        redirect: 'follow',
+        signal: AbortSignal.timeout(15000)
+      });
+      if (pdfRes.ok && (pdfRes.headers.get('content-type') || '').includes('pdf')) {
+        const pdfBuf = await pdfRes.arrayBuffer();
+        console.log('[Boleta] PDF real descargado:', pdfBuf.byteLength, 'bytes');
+        // Subir PDF a Cloudinary (se convierte a imagen via URL .jpg)
+        const _fd = new URLSearchParams();
+        _fd.append('file', 'data:application/pdf;base64,' + Buffer.from(pdfBuf).toString('base64'));
+        _fd.append('upload_preset', 'EMPRESA');
+        _fd.append('folder', 'boletas');
+        _fd.append('public_id', 'boleta_' + oseId);
+        _fd.append('filename_override', 'boleta_' + oseId + '.pdf');
+        const _r = await fetch('https://api.cloudinary.com/v1_1/dnfgsdxan/image/upload', { method: 'POST', body: _fd });
+        if (_r.ok) {
+          const cData = await _r.json();
+          // Cambiar extensión de .pdf a .jpg para que Cloudinary sirva como imagen
+          boletaUrl = (cData.secure_url || '').replace(/\.pdf$/, '.jpg');
+          console.log('[Boleta] Subida OK:', boletaUrl);
+        } else {
+          console.error('[Boleta] Cloudinary error:', (await _r.text()).substring(0, 200));
+        }
+      } else {
+        console.warn('[Boleta] PDF no disponible, status:', pdfRes.status);
+      }
     } catch (e) { console.error('[Boleta] Exception:', e.message); }
   }
 
