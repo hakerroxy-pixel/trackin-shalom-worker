@@ -17,6 +17,7 @@ async function capturarBoleta(oseId, credenciales, guiaData) {
     const clave = guiaData?.clave || '';
     const modalidad = guiaData?.modalidad || 'TERRESTRE';
     
+    console.log('[Shalom] Generando boleta SVG:', { nombre, dni, guia, codigo, clave, destino, modalidad, oseId });
     const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="420" height="500" viewBox="0 0 420 500">
       <rect width="420" height="500" fill="white" rx="12"/>
       <rect width="420" height="60" fill="#DC2626" rx="12 12 0 0"/>
@@ -61,7 +62,8 @@ async function capturarBoleta(oseId, credenciales, guiaData) {
       console.log('[Shalom] ✅ Boleta generada y subida:', cloudData.secure_url);
       return cloudData.secure_url;
     }
-    console.warn('[Shalom] Cloudinary upload failed:', cloudRes.status);
+    const errText = await cloudRes.text();
+    console.warn('[Shalom] Cloudinary upload failed:', cloudRes.status, errText.substring(0, 200));
     return null;
   } catch (e) {
     console.warn('[Shalom] capturarBoleta error:', e.message);
