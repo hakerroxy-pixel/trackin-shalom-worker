@@ -307,4 +307,9 @@ app.listen(PORT, () => {
   console.log(`║  Listening on port ${PORT.toString().padEnd(5)}                     ║`);
   console.log(`║  Env: ${(process.env.NODE_ENV || 'development').padEnd(38)} ║`);
   console.log(`╚══════════════════════════════════════════════╝`);
+
+  // Auto-ping para que Render no duerma el servicio (cada 13 minutos)
+  setInterval(() => {
+    fetch(`http://localhost:${PORT}/health`).catch(() => {});
+  }, 13 * 60 * 1000);
 });
