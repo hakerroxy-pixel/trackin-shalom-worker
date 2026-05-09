@@ -342,23 +342,36 @@ export async function subirPedidoAShalom({ pedido, credenciales, remitenteData, 
     timestamp: new Date().toISOString()
   }));
 
-  // 📸 Generar boleta SVG y subir a Cloudinary
+  // 📸 Generar boleta SVG inline y subir a Cloudinary
   const oseId = res.data?.ose_id || res.ose_id || null;
   let boletaUrl = null;
-  console.log('[Shalom] Boleta: oseId =', oseId, '| res.data.ose_id =', res.data?.ose_id, '| res.ose_id =', res.ose_id);
   if (oseId) {
     try {
-      boletaUrl = await capturarBoleta(oseId, credenciales, {
-        nombre: pedido.nombre || '',
-        dni: pedido.dni || '',
-        destino: destinoTerminal?.nombre || pedido.provincia || '',
-        guia: res.data?.guia ? String(res.data.guia) : '',
-        codigo: res.data?.codigo || '',
-        clave: payload.clave || '',
-        modalidad: esAereo ? 'AEREO' : 'TERRESTRE'
-      });
+      const _bn = pedido.nombre || '';
+      const _bd = pedido.dni || '';
+      const _bg = res.data?.guia ? String(res.data.guia) : '';
+      const _bc = res.data?.codigo || '';
+      const _bk = payload.clave || '';
+      const _bm = esAereo ? 'AEREO' : 'TERRESTRE';
+      const _bt = destinoTerminal?.nombre || pedido.provincia || '';
+      const _svg = '<svg xmlns="http://www.w3.org/2000/svg" width="420" height="500" viewBox="0 0 420 500"><rect width="420" height="500" fill="white" rx="12"/><rect width="420" height="60" fill="#DC2626" rx="12 12 0 0"/><text x="20" y="38" font-family="Arial" font-size="22" font-weight="bold" fill="white">SHALOM</text><text x="300" y="38" font-family="Arial" font-size="12" font-weight="bold" fill="rgba(255,255,255,0.8)">' + _bm + '</text><text x="20" y="100" font-family="Arial" font-size="11" fill="#94a3b8" font-weight="bold">N DE ORDEN</text><text x="20" y="130" font-family="Courier" font-size="28" font-weight="bold" fill="#DC2626">' + _bg + '</text><text x="300" y="100" font-family="Arial" font-size="11" fill="#94a3b8" font-weight="bold">CODIGO</text><text x="300" y="130" font-family="Courier" font-size="22" font-weight="bold" fill="#1e293b">' + _bc + '</text><line x1="20" y1="150" x2="400" y2="150" stroke="#e2e8f0" stroke-width="2" stroke-dasharray="5,5"/><text x="20" y="180" font-family="Arial" font-size="11" fill="#94a3b8" font-weight="bold">DESTINATARIO</text><text x="20" y="200" font-family="Arial" font-size="14" font-weight="bold" fill="#1e293b">' + _bn + '</text><text x="20" y="230" font-family="Arial" font-size="11" fill="#94a3b8" font-weight="bold">DNI</text><text x="20" y="250" font-family="Courier" font-size="14" font-weight="bold" fill="#1e293b">' + _bd + '</text><text x="20" y="290" font-family="Arial" font-size="11" fill="#94a3b8" font-weight="bold">DESTINO</text><text x="20" y="310" font-family="Arial" font-size="14" font-weight="bold" fill="#1e293b">' + _bt + '</text><rect x="20" y="400" width="380" height="70" rx="10" fill="#fef2f2" stroke="#DC2626" stroke-width="2"/><text x="210" y="425" font-family="Arial" font-size="11" font-weight="bold" fill="#DC2626" text-anchor="middle">CLAVE DE RETIRO</text><text x="210" y="455" font-family="Courier" font-size="32" font-weight="bold" fill="#DC2626" text-anchor="middle" letter-spacing="4">' + _bk + '</text></svg>';
+      const _b64 = Buffer.from(_svg).toString('base64');
+      const _cn = process.env.CLOUDINARY_CLOUD || 'dnfgsdxan';
+      const _cp = process.env.CLOUDINARY_PRESET || 'EMPRESA';
+      const _fd = new URLSearchParams();
+      _fd.append('file', 'data:image/svg+xml;base64,' + _b64);
+      _fd.append('upload_preset', _cp);
+      _fd.append('folder', 'boletas');
+      const _cr = await fetch('https://api.cloudinary.com/v1_1/' + _cn + '/image/upload', { method: 'POST', body: _fd });
+      if (_cr.ok) {
+        const _cd = await _cr.json();
+        boletaUrl = _cd.secure_url || null;
+        console.log('[Shalom] Boleta subida:', boletaUrl);
+      } else {
+        console.warn('[Shalom] Cloudinary failed:', _cr.status);
+      }
     } catch (e) {
-      console.error('[Shalom] Boleta capture FAILED:', e.message, e.stack);
+      console.error('[Shalom] Boleta error:', e.message);
     }
   }
 
