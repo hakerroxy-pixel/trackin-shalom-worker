@@ -72,6 +72,40 @@ function requireWorkerAuth(req, res, next) {
 // Endpoints publicos
 // ─────────────────────────────────────────────────────
 
+// Test boleta PDF download (temporal para debug)
+app.get('/test-boleta/:oseId', requireWorkerAuth, async (req, res) => {
+  try {
+    const { ShalomClient } = await import('./shalom-client.js');
+    const client = new ShalomClient({
+      email: SHALOM_EMAIL,
+      password: SHALOM_PASSWORD,
+      debug: true
+    });
+    await client.ensureSession();
+    const pdfUrl = `https://pro.shalom.pe/hdu/pdf/${req.params.oseId}`;
+    const pdfRes = await fetch(pdfUrl, {
+      headers: {
+        'Cookie': client.cookieString(),
+        'User-Agent': 'Mozilla/5.0',
+        'Accept': 'application/pdf,*/*',
+        'Referer': 'https://pro.shalom.pe/'
+      },
+      redirect: 'follow'
+    });
+    const ct = pdfRes.headers.get('content-type') || '';
+    const body = await pdfRes.arrayBuffer();
+    res.json({
+      status: pdfRes.status,
+      contentType: ct,
+      bodySize: body.byteLength,
+      isPdf: ct.includes('pdf'),
+      bodyPreview: ct.includes('pdf') ? '(binary pdf)' : Buffer.from(body).toString('utf8').substring(0, 200)
+    });
+  } catch (e) {
+    res.json({ error: e.message });
+  }
+});
+
 // Health check (publico para que Railway/monitoring lo pingue)
 app.get('/health', (req, res) => {
   res.json({
