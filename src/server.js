@@ -101,6 +101,24 @@ app.get('/test-boleta/:oseId', requireWorkerAuth, async (req, res) => {
   }
 });
 
+// Debug: test boleta upload directly (same logic as shalom-service)
+app.get('/debug-boleta', requireWorkerAuth, async (req, res) => {
+  try {
+    const oseId = '99999999';
+    const _s = '<svg xmlns="http://www.w3.org/2000/svg" width="420" height="480"><rect width="420" height="480" fill="white" rx="10"/><rect width="420" height="55" fill="#DC2626" rx="10 10 0 0"/><text x="20" y="36" font-family="Arial" font-size="20" font-weight="bold" fill="white">SHALOM</text><text x="320" y="36" font-family="Arial" font-size="12" font-weight="bold" fill="white">TERRESTRE</text><text x="20" y="90" font-family="Arial" font-size="10" fill="#999">N DE ORDEN</text><text x="20" y="115" font-family="monospace" font-size="26" font-weight="bold" fill="#DC2626">80704473</text><text x="280" y="90" font-family="Arial" font-size="10" fill="#999">CODIGO</text><text x="280" y="115" font-family="monospace" font-size="20" font-weight="bold" fill="#333">7CDM</text><text x="210" y="425" font-family="monospace" font-size="30" font-weight="bold" fill="#DC2626" text-anchor="middle">7441</text></svg>';
+    const _fd = new URLSearchParams();
+    _fd.append('file', 'data:image/svg+xml;base64,' + Buffer.from(_s).toString('base64'));
+    _fd.append('upload_preset', 'EMPRESA');
+    _fd.append('folder', 'boletas');
+    _fd.append('public_id', 'boleta_' + oseId);
+    const _r = await fetch('https://api.cloudinary.com/v1_1/dnfgsdxan/image/upload', { method: 'POST', body: _fd });
+    const _rj = await _r.text();
+    res.json({ status: _r.status, ok: _r.ok, response: _rj.substring(0, 1000) });
+  } catch (e) {
+    res.json({ error: e.message, stack: e.stack });
+  }
+});
+
 // Health check (publico para que Railway/monitoring lo pingue)
 app.get('/health', (req, res) => {
   res.json({
