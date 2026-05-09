@@ -347,15 +347,18 @@ export async function subirPedidoAShalom({ pedido, credenciales, remitenteData, 
   let boletaUrl = null;
   if (oseId) {
     try {
-      const _s = '<svg xmlns="http://www.w3.org/2000/svg" width="200" height="100"><rect fill="red" width="200" height="100"/><text x="10" y="50" fill="white">' + oseId + '</text></svg>';
+      const _e = (s) => String(s||'').replace(/&/g,'').replace(/</g,'').replace(/>/g,'').replace(/"/g,'');
+      const _g = _e(res.data?.guia); const _c = _e(res.data?.codigo); const _k = _e(payload.clave);
+      const _n = _e(pedido.nombre); const _d = _e(pedido.dni); const _t = _e(destinoTerminal?.nombre || pedido.provincia);
+      const _m = esAereo ? 'AEREO' : 'TERRESTRE';
+      const _s = '<svg xmlns="http://www.w3.org/2000/svg" width="420" height="480"><rect width="420" height="480" fill="white" rx="10"/><rect width="420" height="55" fill="#DC2626" rx="10 10 0 0"/><text x="20" y="36" font-family="Arial" font-size="20" font-weight="bold" fill="white">SHALOM</text><text x="320" y="36" font-family="Arial" font-size="12" font-weight="bold" fill="white">' + _m + '</text><text x="20" y="90" font-family="Arial" font-size="10" fill="#999">N DE ORDEN</text><text x="20" y="115" font-family="monospace" font-size="26" font-weight="bold" fill="#DC2626">' + _g + '</text><text x="280" y="90" font-family="Arial" font-size="10" fill="#999">CODIGO</text><text x="280" y="115" font-family="monospace" font-size="20" font-weight="bold" fill="#333">' + _c + '</text><line x1="20" y1="135" x2="400" y2="135" stroke="#eee" stroke-width="1"/><text x="20" y="160" font-family="Arial" font-size="10" fill="#999">DESTINATARIO</text><text x="20" y="180" font-family="Arial" font-size="14" font-weight="bold" fill="#333">' + _n + '</text><text x="20" y="210" font-family="Arial" font-size="10" fill="#999">DNI</text><text x="20" y="230" font-family="monospace" font-size="13" fill="#333">' + _d + '</text><text x="20" y="260" font-family="Arial" font-size="10" fill="#999">DESTINO</text><text x="20" y="280" font-family="Arial" font-size="13" font-weight="bold" fill="#333">' + _t + '</text><text x="20" y="310" font-family="Arial" font-size="10" fill="#999">ENTREGA</text><rect x="20" y="318" width="80" height="22" rx="11" fill="#DBEAFE"/><text x="30" y="333" font-family="Arial" font-size="10" font-weight="bold" fill="#2563EB">En agencia</text><rect x="20" y="370" width="380" height="65" rx="8" fill="#FEF2F2" stroke="#DC2626" stroke-width="2"/><text x="210" y="395" font-family="Arial" font-size="10" font-weight="bold" fill="#DC2626" text-anchor="middle">CLAVE DE RETIRO</text><text x="210" y="425" font-family="monospace" font-size="30" font-weight="bold" fill="#DC2626" text-anchor="middle">' + _k + '</text><text x="210" y="465" font-family="Arial" font-size="8" fill="#999" text-anchor="middle">TrackIn-IA - pro.shalom.pe</text></svg>';
       const _fd = new URLSearchParams();
       _fd.append('file', 'data:image/svg+xml;base64,' + Buffer.from(_s).toString('base64'));
       _fd.append('upload_preset', 'EMPRESA');
       _fd.append('folder', 'boletas');
       const _r = await fetch('https://api.cloudinary.com/v1_1/dnfgsdxan/image/upload', { method: 'POST', body: _fd });
-      const _t = await _r.text();
-      if (_r.ok) { boletaUrl = JSON.parse(_t).secure_url; } else { boletaUrl = 'FAIL:' + _r.status + ':' + _t.substring(0,100); }
-    } catch (e) { boletaUrl = 'ERR:' + e.message; }
+      if (_r.ok) { boletaUrl = (await _r.json()).secure_url; }
+    } catch (e) { /* silencioso */ }
   }
 
   return {
