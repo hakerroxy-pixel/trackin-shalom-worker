@@ -66,6 +66,8 @@ export class ShalomClient {
     this.SESSION_TTL_MS = 25 * 60 * 1000; // 25 minutos (Laravel default 120 min, jugamos seguro)
   }
 
+  cookieString() { return cookieHeader(this.jar); }
+
   log(...args) {
     if (this.debug) console.log('[ShalomClient]', ...args);
   }

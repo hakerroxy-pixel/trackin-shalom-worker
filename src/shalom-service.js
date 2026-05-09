@@ -276,22 +276,63 @@ export async function subirPedidoAShalom({ pedido, credenciales, remitenteData, 
     timestamp: new Date().toISOString()
   }));
 
+  // 📸 Auto-captura de boleta: descargar PDF de Shalom y subir a Cloudinary como imagen
+  let boletaUrl = null;
+  const oseId = res.data?.ose_id || res.ose_id || null;
+  if (oseId) {
+    try {
+      // Descargar PDF de la boleta desde Shalom
+      const pdfUrl = `https://pro.shalom.pe/hdu/pdf/${oseId}`;
+      const pdfRes = await fetch(pdfUrl, {
+        headers: { 'Cookie': client.cookieString(), 'User-Agent': 'Mozilla/5.0' }
+      });
+      if (pdfRes.ok) {
+        const pdfBuffer = await pdfRes.arrayBuffer();
+        const pdfBase64 = Buffer.from(pdfBuffer).toString('base64');
+        // Subir a Cloudinary como PDF → Cloudinary auto-convierte a imagen
+        const cloudName = process.env.CLOUDINARY_CLOUD || 'dnfgsdxan';
+        const uploadPreset = process.env.CLOUDINARY_PRESET || 'EMPRESA';
+        const formData = new URLSearchParams();
+        formData.append('file', `data:application/pdf;base64,${pdfBase64}`);
+        formData.append('upload_preset', uploadPreset);
+        formData.append('folder', 'boletas');
+        const cloudRes = await fetch(`https://api.cloudinary.com/v1_1/${cloudName}/image/upload`, {
+          method: 'POST',
+          body: formData
+        });
+        if (cloudRes.ok) {
+          const cloudData = await cloudRes.json();
+          // Cloudinary devuelve URL del PDF; agregar .png para obtener imagen
+          boletaUrl = cloudData.secure_url?.replace(/\.pdf$/, '.png') || cloudData.secure_url || null;
+          console.log('[Shalom] ✅ Boleta subida a Cloudinary:', boletaUrl);
+        } else {
+          console.warn('[Shalom] Cloudinary upload failed:', cloudRes.status);
+        }
+      } else {
+        console.warn('[Shalom] PDF download failed:', pdfRes.status);
+      }
+    } catch (e) {
+      console.warn('[Shalom] Boleta auto-capture failed:', e.message);
+    }
+  }
+
   return {
     ok: true,
     raw: res,
-    ose_id: res.data?.ose_id || res.ose_id || null,
+    ose_id: oseId,
     codigo: res.data?.codigo || res.codigo || null,
     guia: res.data?.guia || null,
     serie: res.data?.serie || null,
-    clave: payload.clave || null,                    // ⭐ clave de seguridad para que el cliente recoja el paquete
+    clave: payload.clave || null,
     numeroShalom: res.data?.guia ? String(res.data.guia) : null,
-    modalidad: esAereo ? 'aereo' : 'terrestre',      // ⭐ modalidad REAL de la ruta
-    modalidad_verificada: tarifaResult.strict && verificacionServer, // ⭐ confirmado pre+post
-    modalidad_server: modalidadServer,                // ⭐ lo que devolvió el tracking público
-    tiempoLlegada: tarifaResult.tiempo_llegada,       // ⭐ tiempo referencial
+    modalidad: esAereo ? 'aereo' : 'terrestre',
+    modalidad_verificada: tarifaResult.strict && verificacionServer,
+    modalidad_server: modalidadServer,
+    tiempoLlegada: tarifaResult.tiempo_llegada,
     tarifa_calculada: tarifa,
     payload_enviado: payload,
-    destino_terminal: destinoTerminal.nombre
+    destino_terminal: destinoTerminal.nombre,
+    boletaUrl                                        // ⭐ URL de la boleta como imagen
   };
 }
 
