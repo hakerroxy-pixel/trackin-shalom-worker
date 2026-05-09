@@ -75,32 +75,21 @@ function requireWorkerAuth(req, res, next) {
 // Test boleta PDF download (temporal para debug)
 app.get('/test-boleta/:oseId', requireWorkerAuth, async (req, res) => {
   try {
-    const { ShalomClient } = await import('./shalom-client.js');
-    const client = new ShalomClient({
-      email: SHALOM_EMAIL,
-      password: SHALOM_PASSWORD,
-      debug: true
+    // Test SVG → Cloudinary flow directly
+    const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="420" height="300"><rect width="420" height="300" fill="white" rx="12"/><rect width="420" height="50" fill="#DC2626" rx="12 12 0 0"/><text x="20" y="35" font-family="Arial" font-size="20" font-weight="bold" fill="white">SHALOM TEST</text><text x="20" y="90" font-family="Courier" font-size="24" fill="#DC2626">N: ${req.params.oseId}</text><text x="20" y="130" font-family="Arial" font-size="14" fill="#333">TEST BOLETA</text><text x="210" y="250" font-family="Courier" font-size="28" font-weight="bold" fill="#DC2626" text-anchor="middle">1234</text></svg>`;
+    const svgBase64 = Buffer.from(svg).toString('base64');
+    const cloudName = process.env.CLOUDINARY_CLOUD || 'dnfgsdxan';
+    const uploadPreset = process.env.CLOUDINARY_PRESET || 'EMPRESA';
+    const formData = new URLSearchParams();
+    formData.append('file', 'data:image/svg+xml;base64,' + svgBase64);
+    formData.append('upload_preset', uploadPreset);
+    formData.append('folder', 'boletas');
+    const cloudRes = await fetch(`https://api.cloudinary.com/v1_1/${cloudName}/image/upload`, {
+      method: 'POST',
+      body: formData
     });
-    await client.ensureSession();
-    const pdfUrl = `https://pro.shalom.pe/hdu/pdf/${req.params.oseId}`;
-    const pdfRes = await fetch(pdfUrl, {
-      headers: {
-        'Cookie': client.cookieString(),
-        'User-Agent': 'Mozilla/5.0',
-        'Accept': 'application/pdf,*/*',
-        'Referer': 'https://pro.shalom.pe/'
-      },
-      redirect: 'follow'
-    });
-    const ct = pdfRes.headers.get('content-type') || '';
-    const body = await pdfRes.arrayBuffer();
-    res.json({
-      status: pdfRes.status,
-      contentType: ct,
-      bodySize: body.byteLength,
-      isPdf: ct.includes('pdf'),
-      bodyPreview: ct.includes('pdf') ? '(binary pdf)' : Buffer.from(body).toString('utf8').substring(0, 200)
-    });
+    const cloudText = await cloudRes.text();
+    res.json({ cloudinaryStatus: cloudRes.status, response: cloudText.substring(0, 300), svgLength: svg.length });
   } catch (e) {
     res.json({ error: e.message });
   }
