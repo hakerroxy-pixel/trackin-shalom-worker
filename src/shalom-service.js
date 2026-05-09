@@ -5,6 +5,61 @@
 import { ShalomClient, ShalomError } from './shalom-client.js';
 import { buildServiceOrderPayload, DEFAULT_PRODUCT } from './shipment-builder.js';
 
+// 📸 Captura de boleta Shalom como screenshot y sube a Cloudinary
+async function capturarBoleta(oseId, credenciales) {
+  let browser = null;
+  try {
+    const puppeteer = await import('puppeteer');
+    browser = await puppeteer.default.launch({
+      headless: 'new',
+      args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage']
+    });
+    const page = await browser.newPage();
+    await page.setViewport({ width: 800, height: 1100 });
+
+    // Login en Shalom Pro
+    await page.goto('https://pro.shalom.pe/login', { waitUntil: 'networkidle2', timeout: 30000 });
+    await page.type('input[type="email"], input[name="email"]', credenciales.email);
+    await page.type('input[type="password"], input[name="password"]', credenciales.password);
+    await page.click('button[type="submit"]');
+    await page.waitForNavigation({ waitUntil: 'networkidle2', timeout: 15000 }).catch(() => {});
+    await new Promise(r => setTimeout(r, 2000));
+
+    // Navegar a la boleta
+    await page.goto(`https://pro.shalom.pe/hdu/pdf/${oseId}`, { waitUntil: 'networkidle2', timeout: 20000 });
+    await new Promise(r => setTimeout(r, 3000)); // Esperar render SPA
+
+    // Screenshot
+    const screenshotBuffer = await page.screenshot({ type: 'png', fullPage: true });
+    console.log('[Shalom] Screenshot boleta:', screenshotBuffer.length, 'bytes');
+
+    // Subir a Cloudinary
+    const base64 = screenshotBuffer.toString('base64');
+    const cloudName = process.env.CLOUDINARY_CLOUD || 'dnfgsdxan';
+    const uploadPreset = process.env.CLOUDINARY_PRESET || 'EMPRESA';
+    const formData = new URLSearchParams();
+    formData.append('file', `data:image/png;base64,${base64}`);
+    formData.append('upload_preset', uploadPreset);
+    formData.append('folder', 'boletas');
+    const cloudRes = await fetch(`https://api.cloudinary.com/v1_1/${cloudName}/image/upload`, {
+      method: 'POST',
+      body: formData
+    });
+    if (cloudRes.ok) {
+      const cloudData = await cloudRes.json();
+      console.log('[Shalom] ✅ Boleta screenshot subida:', cloudData.secure_url);
+      return cloudData.secure_url;
+    }
+    console.warn('[Shalom] Cloudinary upload failed:', cloudRes.status);
+    return null;
+  } catch (e) {
+    console.warn('[Shalom] capturarBoleta error:', e.message);
+    return null;
+  } finally {
+    if (browser) await browser.close().catch(() => {});
+  }
+}
+
 // Cache global de instancias de ShalomClient por email (para reusar sesiones en memoria del worker)
 const clientCache = new Map();
 
@@ -276,9 +331,16 @@ export async function subirPedidoAShalom({ pedido, credenciales, remitenteData, 
     timestamp: new Date().toISOString()
   }));
 
-    // 📸 URL de la boleta en Shalom Pro (SPA, no descargable por API)
+  // 📸 Captura de boleta: screenshot con Puppeteer + subir a Cloudinary
   const oseId = res.data?.ose_id || res.ose_id || null;
-  const boletaUrl = oseId ? 'https://pro.shalom.pe/hdu/pdf/' + oseId : null;
+  let boletaUrl = null;
+  if (oseId) {
+    try {
+      boletaUrl = await capturarBoleta(oseId, credenciales);
+    } catch (e) {
+      console.warn('[Shalom] Boleta capture failed:', e.message);
+    }
+  }
 
   return {
     ok: true,
