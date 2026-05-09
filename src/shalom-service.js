@@ -282,34 +282,47 @@ export async function subirPedidoAShalom({ pedido, credenciales, remitenteData, 
   if (oseId) {
     try {
       // Descargar PDF de la boleta desde Shalom
+      // Re-asegurar sesión antes de descargar PDF
+      await client.ensureSession();
       const pdfUrl = `https://pro.shalom.pe/hdu/pdf/${oseId}`;
+      console.log('[Shalom] Descargando boleta PDF:', pdfUrl);
       const pdfRes = await fetch(pdfUrl, {
-        headers: { 'Cookie': client.cookieString(), 'User-Agent': 'Mozilla/5.0' }
+        headers: {
+          'Cookie': client.cookieString(),
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+          'Accept': 'application/pdf,*/*',
+          'Referer': 'https://pro.shalom.pe/'
+        },
+        redirect: 'follow'
       });
-      if (pdfRes.ok) {
+      const contentType = pdfRes.headers.get('content-type') || '';
+      console.log('[Shalom] PDF response:', pdfRes.status, contentType);
+      if (pdfRes.ok && contentType.includes('pdf')) {
         const pdfBuffer = await pdfRes.arrayBuffer();
         const pdfBase64 = Buffer.from(pdfBuffer).toString('base64');
-        // Subir a Cloudinary como PDF → Cloudinary auto-convierte a imagen
+        console.log('[Shalom] PDF size:', pdfBuffer.byteLength, 'bytes');
+        // Subir a Cloudinary como imagen (Cloudinary convierte PDF page 1 a imagen)
         const cloudName = process.env.CLOUDINARY_CLOUD || 'dnfgsdxan';
         const uploadPreset = process.env.CLOUDINARY_PRESET || 'EMPRESA';
         const formData = new URLSearchParams();
         formData.append('file', `data:application/pdf;base64,${pdfBase64}`);
         formData.append('upload_preset', uploadPreset);
         formData.append('folder', 'boletas');
+        formData.append('format', 'png');
         const cloudRes = await fetch(`https://api.cloudinary.com/v1_1/${cloudName}/image/upload`, {
           method: 'POST',
           body: formData
         });
+        const cloudText = await cloudRes.text();
+        console.log('[Shalom] Cloudinary response:', cloudRes.status, cloudText.substring(0, 200));
         if (cloudRes.ok) {
-          const cloudData = await cloudRes.json();
-          // Cloudinary devuelve URL del PDF; agregar .png para obtener imagen
-          boletaUrl = cloudData.secure_url?.replace(/\.pdf$/, '.png') || cloudData.secure_url || null;
-          console.log('[Shalom] ✅ Boleta subida a Cloudinary:', boletaUrl);
-        } else {
-          console.warn('[Shalom] Cloudinary upload failed:', cloudRes.status);
+          const cloudData = JSON.parse(cloudText);
+          boletaUrl = cloudData.secure_url || null;
+          console.log('[Shalom] ✅ Boleta subida:', boletaUrl);
         }
       } else {
-        console.warn('[Shalom] PDF download failed:', pdfRes.status);
+        const bodyPreview = await pdfRes.text();
+        console.warn('[Shalom] PDF download failed:', pdfRes.status, contentType, bodyPreview.substring(0, 100));
       }
     } catch (e) {
       console.warn('[Shalom] Boleta auto-capture failed:', e.message);
