@@ -23,7 +23,7 @@ async function capturarBoleta(oseId, credenciales, guiaData) {
       <rect width="420" height="60" fill="#DC2626" rx="12 12 0 0"/>
       <text x="20" y="38" font-family="Arial" font-size="22" font-weight="bold" fill="white">SHALOM</text>
       <text x="300" y="38" font-family="Arial" font-size="12" font-weight="bold" fill="rgba(255,255,255,0.8)">${modalidad.toUpperCase()}</text>
-      <text x="20" y="100" font-family="Arial" font-size="11" fill="#94a3b8" font-weight="bold">N° DE ORDEN</text>
+      <text x="20" y="100" font-family="Arial" font-size="11" fill="#94a3b8" font-weight="bold">N DE ORDEN</text>
       <text x="20" y="130" font-family="Courier" font-size="28" font-weight="bold" fill="#DC2626">${guia}</text>
       <text x="300" y="100" font-family="Arial" font-size="11" fill="#94a3b8" font-weight="bold">CÓDIGO</text>
       <text x="300" y="130" font-family="Courier" font-size="22" font-weight="bold" fill="#1e293b">${codigo}</text>
@@ -40,9 +40,9 @@ async function capturarBoleta(oseId, credenciales, guiaData) {
       <rect x="20" y="355" width="90" height="24" rx="12" fill="#dbeafe"/>
       <text x="35" y="372" font-family="Arial" font-size="11" font-weight="bold" fill="#2563eb">En agencia</text>
       <rect x="20" y="400" width="380" height="70" rx="10" fill="#fef2f2" stroke="#DC2626" stroke-width="2"/>
-      <text x="210" y="425" font-family="Arial" font-size="11" font-weight="bold" fill="#DC2626" text-anchor="middle">🔑 CLAVE DE RETIRO</text>
+      <text x="210" y="425" font-family="Arial" font-size="11" font-weight="bold" fill="#DC2626" text-anchor="middle">CLAVE DE RETIRO</text>
       <text x="210" y="455" font-family="Courier" font-size="32" font-weight="bold" fill="#DC2626" text-anchor="middle" letter-spacing="4">${clave}</text>
-      <text x="210" y="490" font-family="Arial" font-size="9" fill="#94a3b8" text-anchor="middle">Generado por TrackIn-IA • pro.shalom.pe</text>
+      <text x="210" y="490" font-family="Arial" font-size="9" fill="#94a3b8" text-anchor="middle">Generado por TrackIn-IA - pro.shalom.pe</text>
     </svg>`;
 
     // Convertir SVG a base64 y subir a Cloudinary
