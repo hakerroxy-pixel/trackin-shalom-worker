@@ -357,6 +357,7 @@ export async function subirPedidoAShalom({ pedido, credenciales, remitenteData, 
       _fd.append('upload_preset', 'EMPRESA');
       _fd.append('folder', 'boletas');
       _fd.append('public_id', 'boleta_' + oseId);
+      _fd.append('filename_override', 'boleta_' + oseId + '.svg');
       const _r = await fetch('https://api.cloudinary.com/v1_1/dnfgsdxan/image/upload', { method: 'POST', body: _fd });
       const _rj = await _r.text();
       console.log('[Boleta] Cloudinary status=' + _r.status + ' response=' + _rj.substring(0, 300));

@@ -111,6 +111,7 @@ app.get('/debug-boleta', requireWorkerAuth, async (req, res) => {
     _fd.append('upload_preset', 'EMPRESA');
     _fd.append('folder', 'boletas');
     _fd.append('public_id', 'boleta_' + oseId);
+    _fd.append('filename_override', 'boleta_' + oseId + '.svg');
     const _r = await fetch('https://api.cloudinary.com/v1_1/dnfgsdxan/image/upload', { method: 'POST', body: _fd });
     const _rj = await _r.text();
     res.json({ status: _r.status, ok: _r.ok, response: _rj.substring(0, 1000) });
