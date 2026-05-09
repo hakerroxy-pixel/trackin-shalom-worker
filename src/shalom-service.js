@@ -358,8 +358,11 @@ export async function subirPedidoAShalom({ pedido, credenciales, remitenteData, 
       _fd.append('folder', 'boletas');
       _fd.append('public_id', 'boleta_' + oseId);
       const _r = await fetch('https://api.cloudinary.com/v1_1/dnfgsdxan/image/upload', { method: 'POST', body: _fd });
-      if (_r.ok) { boletaUrl = (await _r.json()).secure_url; }
-    } catch (e) { /* silencioso */ }
+      const _rj = await _r.text();
+      console.log('[Boleta] Cloudinary status=' + _r.status + ' response=' + _rj.substring(0, 300));
+      if (_r.ok) { try { boletaUrl = JSON.parse(_rj).secure_url; } catch(pe) {} }
+      else { console.error('[Boleta] Cloudinary ERROR: ' + _rj.substring(0, 500)); }
+    } catch (e) { console.error('[Boleta] Exception: ' + e.message); }
   }
 
   return {
