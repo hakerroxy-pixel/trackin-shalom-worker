@@ -9,10 +9,12 @@ import { buildServiceOrderPayload, DEFAULT_PRODUCT } from './shipment-builder.js
 async function capturarBoleta(oseId, credenciales) {
   let browser = null;
   try {
-    const puppeteer = await import('puppeteer');
+    const puppeteer = await import('puppeteer-core');
+    const chromium = await import('@sparticuz/chromium');
     browser = await puppeteer.default.launch({
-      headless: 'new',
-      args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage']
+      executablePath: await chromium.default.executablePath(),
+      headless: chromium.default.headless,
+      args: chromium.default.args
     });
     const page = await browser.newPage();
     await page.setViewport({ width: 800, height: 1100 });
