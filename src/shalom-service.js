@@ -344,40 +344,21 @@ export async function subirPedidoAShalom({ pedido, credenciales, remitenteData, 
 
   // 📸 Generar boleta SVG inline y subir a Cloudinary
   const oseId = res.data?.ose_id || res.ose_id || null;
-  let boletaUrl = 'HARDCODED_TEST_' + oseId;
+  let boletaUrl = null;
   if (oseId) {
     try {
-      const _esc = (s) => String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
-      const _bn = _esc(pedido.nombre || '');
-      const _bd = _esc(pedido.dni || '');
-      const _bg = _esc(res.data?.guia ? String(res.data.guia) : '');
-      const _bc = _esc(res.data?.codigo || '');
-      const _bk = _esc(payload.clave || '');
-      const _bm = esAereo ? 'AEREO' : 'TERRESTRE';
-      const _bt = _esc(destinoTerminal?.nombre || pedido.provincia || '');
-      console.log('[Shalom] Boleta SVG data:', { _bn, _bd, _bg, _bc, _bk, _bt });
-      const _svg = '<svg xmlns="http://www.w3.org/2000/svg" width="420" height="500" viewBox="0 0 420 500"><rect width="420" height="500" fill="white" rx="12"/><rect width="420" height="60" fill="#DC2626" rx="12 12 0 0"/><text x="20" y="38" font-family="Arial" font-size="22" font-weight="bold" fill="white">SHALOM</text><text x="300" y="38" font-family="Arial" font-size="12" font-weight="bold" fill="rgba(255,255,255,0.8)">' + _bm + '</text><text x="20" y="100" font-family="Arial" font-size="11" fill="#94a3b8" font-weight="bold">N DE ORDEN</text><text x="20" y="130" font-family="Courier" font-size="28" font-weight="bold" fill="#DC2626">' + _bg + '</text><text x="300" y="100" font-family="Arial" font-size="11" fill="#94a3b8" font-weight="bold">CODIGO</text><text x="300" y="130" font-family="Courier" font-size="22" font-weight="bold" fill="#1e293b">' + _bc + '</text><line x1="20" y1="150" x2="400" y2="150" stroke="#e2e8f0" stroke-width="2" stroke-dasharray="5,5"/><text x="20" y="180" font-family="Arial" font-size="11" fill="#94a3b8" font-weight="bold">DESTINATARIO</text><text x="20" y="200" font-family="Arial" font-size="14" font-weight="bold" fill="#1e293b">' + _bn + '</text><text x="20" y="230" font-family="Arial" font-size="11" fill="#94a3b8" font-weight="bold">DNI</text><text x="20" y="250" font-family="Courier" font-size="14" font-weight="bold" fill="#1e293b">' + _bd + '</text><text x="20" y="290" font-family="Arial" font-size="11" fill="#94a3b8" font-weight="bold">DESTINO</text><text x="20" y="310" font-family="Arial" font-size="14" font-weight="bold" fill="#1e293b">' + _bt + '</text><rect x="20" y="400" width="380" height="70" rx="10" fill="#fef2f2" stroke="#DC2626" stroke-width="2"/><text x="210" y="425" font-family="Arial" font-size="11" font-weight="bold" fill="#DC2626" text-anchor="middle">CLAVE DE RETIRO</text><text x="210" y="455" font-family="Courier" font-size="32" font-weight="bold" fill="#DC2626" text-anchor="middle" letter-spacing="4">' + _bk + '</text></svg>';
-      const _b64 = Buffer.from(_svg).toString('base64');
-      const _cn = process.env.CLOUDINARY_CLOUD || 'dnfgsdxan';
-      const _cp = process.env.CLOUDINARY_PRESET || 'EMPRESA';
+      const _g = String(res.data?.guia || '');
+      const _c = String(res.data?.codigo || '');
+      const _k = String(payload.clave || '');
+      const _n = String(pedido.nombre || '').replace(/&/g,'').replace(/</g,'').replace(/>/g,'');
+      const _svg = '<svg xmlns="http://www.w3.org/2000/svg" width="400" height="300"><rect width="400" height="300" fill="white"/><rect width="400" height="50" fill="#DC2626"/><text x="15" y="35" font-family="Arial" font-size="20" font-weight="bold" fill="white">SHALOM</text><text x="15" y="85" font-family="Arial" font-size="10" fill="#999">N DE ORDEN</text><text x="15" y="110" font-family="monospace" font-size="24" font-weight="bold" fill="#DC2626">' + _g + '</text><text x="250" y="85" font-family="Arial" font-size="10" fill="#999">CODIGO</text><text x="250" y="110" font-family="monospace" font-size="20" font-weight="bold" fill="#333">' + _c + '</text><text x="15" y="145" font-family="Arial" font-size="10" fill="#999">DESTINATARIO</text><text x="15" y="165" font-family="Arial" font-size="13" font-weight="bold" fill="#333">' + _n + '</text><rect x="15" y="200" width="370" height="60" rx="8" fill="#FEF2F2" stroke="#DC2626" stroke-width="2"/><text x="200" y="225" font-family="Arial" font-size="10" font-weight="bold" fill="#DC2626" text-anchor="middle">CLAVE DE RETIRO</text><text x="200" y="250" font-family="monospace" font-size="28" font-weight="bold" fill="#DC2626" text-anchor="middle">' + _k + '</text><text x="200" y="285" font-family="Arial" font-size="8" fill="#999" text-anchor="middle">TrackIn-IA - pro.shalom.pe</text></svg>';
       const _fd = new URLSearchParams();
-      _fd.append('file', 'data:image/svg+xml;base64,' + _b64);
-      _fd.append('upload_preset', _cp);
+      _fd.append('file', 'data:image/svg+xml;base64,' + Buffer.from(_svg).toString('base64'));
+      _fd.append('upload_preset', process.env.CLOUDINARY_PRESET || 'EMPRESA');
       _fd.append('folder', 'boletas');
-      const _cr = await fetch('https://api.cloudinary.com/v1_1/' + _cn + '/image/upload', { method: 'POST', body: _fd });
-      if (_cr.ok) {
-        const _cd = await _cr.json();
-        boletaUrl = _cd.secure_url || null;
-        console.log('[Shalom] Boleta subida:', boletaUrl);
-      } else {
-        console.warn('[Shalom] Cloudinary failed:', _cr.status);
-      }
-    } catch (e) {
-      console.error('[Shalom] Boleta error:', e.message);
-      boletaUrl = 'ERROR:' + e.message;
-    }
-  } else {
-    boletaUrl = 'NO_OSEID';
+      const _r = await fetch('https://api.cloudinary.com/v1_1/' + (process.env.CLOUDINARY_CLOUD || 'dnfgsdxan') + '/image/upload', { method: 'POST', body: _fd });
+      if (_r.ok) { boletaUrl = (await _r.json()).secure_url || null; }
+    } catch (e) { boletaUrl = null; }
   }
 
   return {
