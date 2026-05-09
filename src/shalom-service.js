@@ -374,7 +374,10 @@ export async function subirPedidoAShalom({ pedido, credenciales, remitenteData, 
       }
     } catch (e) {
       console.error('[Shalom] Boleta error:', e.message);
+      boletaUrl = 'ERROR:' + e.message;
     }
+  } else {
+    boletaUrl = 'NO_OSEID';
   }
 
   return {
