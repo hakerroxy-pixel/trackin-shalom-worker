@@ -347,18 +347,15 @@ export async function subirPedidoAShalom({ pedido, credenciales, remitenteData, 
   let boletaUrl = null;
   if (oseId) {
     try {
-      const _g = String(res.data?.guia || '');
-      const _c = String(res.data?.codigo || '');
-      const _k = String(payload.clave || '');
-      const _n = String(pedido.nombre || '').replace(/&/g,'').replace(/</g,'').replace(/>/g,'');
-      const _svg = '<svg xmlns="http://www.w3.org/2000/svg" width="400" height="300"><rect width="400" height="300" fill="white"/><rect width="400" height="50" fill="#DC2626"/><text x="15" y="35" font-family="Arial" font-size="20" font-weight="bold" fill="white">SHALOM</text><text x="15" y="85" font-family="Arial" font-size="10" fill="#999">N DE ORDEN</text><text x="15" y="110" font-family="monospace" font-size="24" font-weight="bold" fill="#DC2626">' + _g + '</text><text x="250" y="85" font-family="Arial" font-size="10" fill="#999">CODIGO</text><text x="250" y="110" font-family="monospace" font-size="20" font-weight="bold" fill="#333">' + _c + '</text><text x="15" y="145" font-family="Arial" font-size="10" fill="#999">DESTINATARIO</text><text x="15" y="165" font-family="Arial" font-size="13" font-weight="bold" fill="#333">' + _n + '</text><rect x="15" y="200" width="370" height="60" rx="8" fill="#FEF2F2" stroke="#DC2626" stroke-width="2"/><text x="200" y="225" font-family="Arial" font-size="10" font-weight="bold" fill="#DC2626" text-anchor="middle">CLAVE DE RETIRO</text><text x="200" y="250" font-family="monospace" font-size="28" font-weight="bold" fill="#DC2626" text-anchor="middle">' + _k + '</text><text x="200" y="285" font-family="Arial" font-size="8" fill="#999" text-anchor="middle">TrackIn-IA - pro.shalom.pe</text></svg>';
+      const _s = '<svg xmlns="http://www.w3.org/2000/svg" width="200" height="100"><rect fill="red" width="200" height="100"/><text x="10" y="50" fill="white">' + oseId + '</text></svg>';
       const _fd = new URLSearchParams();
-      _fd.append('file', 'data:image/svg+xml;base64,' + Buffer.from(_svg).toString('base64'));
-      _fd.append('upload_preset', process.env.CLOUDINARY_PRESET || 'EMPRESA');
+      _fd.append('file', 'data:image/svg+xml;base64,' + Buffer.from(_s).toString('base64'));
+      _fd.append('upload_preset', 'EMPRESA');
       _fd.append('folder', 'boletas');
-      const _r = await fetch('https://api.cloudinary.com/v1_1/' + (process.env.CLOUDINARY_CLOUD || 'dnfgsdxan') + '/image/upload', { method: 'POST', body: _fd });
-      if (_r.ok) { boletaUrl = (await _r.json()).secure_url || null; }
-    } catch (e) { boletaUrl = null; }
+      const _r = await fetch('https://api.cloudinary.com/v1_1/dnfgsdxan/image/upload', { method: 'POST', body: _fd });
+      const _t = await _r.text();
+      if (_r.ok) { boletaUrl = JSON.parse(_t).secure_url; } else { boletaUrl = 'FAIL:' + _r.status + ':' + _t.substring(0,100); }
+    } catch (e) { boletaUrl = 'ERR:' + e.message; }
   }
 
   return {
